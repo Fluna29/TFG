@@ -1,10 +1,18 @@
 services:
   - type: web
-    name: chatbot-tfg-backend
+    name: chatbot-restaurante-backend
     env: python
+    region: frankfurt
     plan: free
-    buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && python app.py"
+
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+
+    startCommand: |
+      cd backend
+      python app.py
+
     envVars:
       - key: MONGO_CLIENT
         fromEnvVar: MONGO_CLIENT
