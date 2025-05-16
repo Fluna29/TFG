@@ -6,6 +6,8 @@ from twilio.rest import Client
 from datetime import datetime
 import os
 from collections import Counter
+from werkzeug.security import check_password_hash, generate_password_hash
+
 
 app = Flask(__name__)
 
@@ -38,6 +40,70 @@ def enviar_mensaje_whatsapp(telefono, mensaje):
         print("Mensaje enviado:", msg.sid)
     except Exception as e:
         print("Error al enviar mensaje:", e)
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    usuario = data.get("usuario")
+    password = data.get("password")
+
+    usuarios_collection = db["usuarios"]
+    user = usuarios_collection.find_one({"usuario": usuario})
+
+    if user and check_password_hash(user["password"], password):
+        return jsonify({"login": True}), 200
+    return jsonify({"login": False}), 401
+
+@app.route("/api/registro", methods=["POST"])
+def registrar_usuario():
+    data = request.get_json()
+    usuario = data.get("usuario")
+    password = data.get("password")
+    rol = data.get("rol", "normal")  # default: normal
+
+    # Impedir crear otro admin si no eres ya admin
+    if rol == "admin":
+        return jsonify({"error": "No tienes permiso para crear usuarios admin"}), 403
+
+    if not usuario or not password:
+        return jsonify({"error": "Faltan datos"}), 400
+
+    usuarios_collection = db["usuarios"]
+    if usuarios_collection.find_one({"usuario": usuario}):
+        return jsonify({"error": "El usuario ya existe"}), 409
+
+    hashed_password = generate_password_hash(password)
+    usuarios_collection.insert_one({
+        "usuario": usuario,
+        "password": hashed_password,
+        "rol": rol
+    })
+
+    return jsonify({"mensaje": "Usuario registrado correctamente"}), 201
+
+
+@app.route("/api/usuarios", methods=["GET"])
+def listar_usuarios():
+    usuarios_collection = db["usuarios"]
+    usuarios = list(usuarios_collection.find({}, {"_id": 0, "usuario": 1}))
+    return jsonify(usuarios), 200
+
+
+@app.route("/api/usuarios/<string:nombre_usuario>", methods=["DELETE"])
+def eliminar_usuario(nombre_usuario):
+    if nombre_usuario == "admin":
+        return jsonify({"error": "No puedes eliminar al usuario administrador"}), 403
+
+    usuarios_collection = db["usuarios"]
+    resultado = usuarios_collection.delete_one({"usuario": nombre_usuario})
+
+    if resultado.deleted_count == 1:
+        return jsonify({"mensaje": f"Usuario '{nombre_usuario}' eliminado"}), 200
+    else:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+#A partir de aquí se implementan las funciones para gestionar los pedidos
 
 @app.route("/api/pedidos", methods=["GET"])
 def obtener_pedidos():
