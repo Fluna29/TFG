@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: chatbot-tfg-backend
+    env: python
+    plan: free
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && python app.py"
+    envVars:
+      - key: MONGO_CLIENT
+        fromEnvVar: MONGO_CLIENT
+      - key: MONGO_DB
+        fromEnvVar: MONGO_DB
+      - key: MONGO_PEDIDOS_COLLECTION
+        fromEnvVar: MONGO_PEDIDOS_COLLECTION
+      - key: MONGO_CONTADOR_COLLECTION
+        fromEnvVar: MONGO_CONTADOR_COLLECTION
+      - key: TWILIO_SID
+        fromEnvVar: TWILIO_SID
+      - key: TWILIO_AUTH_TOKEN
+        fromEnvVar: TWILIO_AUTH_TOKEN
