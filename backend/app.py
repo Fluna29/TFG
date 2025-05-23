@@ -1,23 +1,24 @@
-from flask import Flask, request, jsonify
+
+from datetime import datetime, timedelta
 from pymongo import MongoClient
+from flask import Flask, request, jsonify
 from bson.json_util import dumps
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
-from datetime import datetime
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
+import atexit
 from collections import Counter
-from werkzeug.security import check_password_hash, generate_password_hash
-
 
 app = Flask(__name__)
 
-# Conexión a MongoDB Atlas
+# MongoDB setup
 client = MongoClient(os.environ.get("MONGO_CLIENT"))
 db = client[os.environ.get("MONGO_DB")]
 pedidos_collection = db[os.environ.get("MONGO_PEDIDOS_COLLECTION")]
 contador_collection = db[os.environ.get("MONGO_CONTADOR_COLLECTION")]
 
-# Generar ID numérico incremental persistente
+# ID incremental
 def generar_id_numerico():
     result = contador_collection.find_one_and_update(
         {"_id": "contador_pedidos"},
@@ -27,6 +28,7 @@ def generar_id_numerico():
     )
     return result["valor"]
 
+# Enviar mensaje de Whatsapp
 def enviar_mensaje_whatsapp(telefono, mensaje):
     try:
         account_sid = os.environ.get("TWILIO_SID")
@@ -41,73 +43,28 @@ def enviar_mensaje_whatsapp(telefono, mensaje):
     except Exception as e:
         print("Error al enviar mensaje:", e)
 
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    usuario = data.get("usuario")
-    password = data.get("password")
-
-    usuarios_collection = db["usuarios"]
-    user = usuarios_collection.find_one({"usuario": usuario})
-
-    if user and check_password_hash(user["password"], password):
-        return jsonify({"login": True}), 200
-    return jsonify({"login": False}), 401
-
-@app.route("/api/registro", methods=["POST"])
-def registrar_usuario():
-    data = request.get_json()
-    usuario = data.get("usuario")
-    password = data.get("password")
-    rol = data.get("rol", "normal")  # default: normal
-
-    # Impedir crear otro admin si no eres ya admin
-    if rol == "admin":
-        return jsonify({"error": "No tienes permiso para crear usuarios admin"}), 403
-
-    if not usuario or not password:
-        return jsonify({"error": "Faltan datos"}), 400
-
-    usuarios_collection = db["usuarios"]
-    if usuarios_collection.find_one({"usuario": usuario}):
-        return jsonify({"error": "El usuario ya existe"}), 409
-
-    hashed_password = generate_password_hash(password)
-    usuarios_collection.insert_one({
-        "usuario": usuario,
-        "password": hashed_password,
-        "rol": rol
-    })
-
-    return jsonify({"mensaje": "Usuario registrado correctamente"}), 201
-
-
-@app.route("/api/usuarios", methods=["GET"])
-def listar_usuarios():
-    usuarios_collection = db["usuarios"]
-    usuarios = list(usuarios_collection.find({}, {"_id": 0, "usuario": 1}))
-    return jsonify(usuarios), 200
-
-
-@app.route("/api/usuarios/<string:nombre_usuario>", methods=["DELETE"])
-def eliminar_usuario(nombre_usuario):
-    if nombre_usuario == "admin":
-        return jsonify({"error": "No puedes eliminar al usuario administrador"}), 403
-
-    usuarios_collection = db["usuarios"]
-    resultado = usuarios_collection.delete_one({"usuario": nombre_usuario})
-
-    if resultado.deleted_count == 1:
-        return jsonify({"mensaje": f"Usuario '{nombre_usuario}' eliminado"}), 200
-    else:
-        return jsonify({"error": "Usuario no encontrado"}), 404
-
-#A partir de aquí se implementan las funciones para gestionar los pedidos
+# Validar hora apertura restaurante
+def hora_valida(hora_str):
+    try:
+        hora = datetime.strptime(hora_str, "%H:%M").time()
+        return (datetime.strptime("13:00", "%H:%M").time() <= hora <= datetime.strptime("16:00", "%H:%M").time()) or                (datetime.strptime("20:00", "%H:%M").time() <= hora <= datetime.strptime("23:00", "%H:%M").time())
+    except ValueError:
+        return False
 
 @app.route("/api/pedidos", methods=["GET"])
 def obtener_pedidos():
-    pedidos = list(pedidos_collection.find())
+    query = {}
+    fecha_str = request.args.get("fecha")
+    tipo = request.args.get("tipo")
+    if fecha_str:
+        try:
+            fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+            query["fecha"] = fecha
+        except ValueError:
+            pass
+    if tipo:
+        query["tipo"] = tipo
+    pedidos = list(pedidos_collection.find(query))
     return dumps(pedidos), 200
 
 @app.route("/api/pedidos", methods=["POST"])
@@ -128,13 +85,13 @@ def actualizar_pedido(id_pedido):
         return_document=True
     )
     if resultado:
-        # Enviar mensaje si se actualizó el estado
         if "estado" in datos and "telefono" in resultado:
+            nombre = resultado.get("nombre", "")
             mensaje = {
-                "pendiente": "🕒 Tu pedido ha sido recibido.",
-                "en_preparacion": "👨‍🍳 Tu pedido está en preparación.",
-                "preparado": "✅ Tu pedido ya está listo para recoger.",
-                "entregado": "🚚 Tu pedido ha sido entregado. ¡Gracias!"
+                "pendiente": f"🕒 Hola {nombre}, tu pedido ha sido recibido. ¡Estamos preparando todo para ti!\n\n– Trattoria Luna 🍝",
+                "en_preparacion": f"👨‍🍳 {nombre}, estamos cocinando tu pedido. ¡Ya casi está listo!\n\n– Trattoria Luna 🍝",
+                "preparado": f"✅ ¡{nombre}, tu pedido ya está listo para recoger! 🍽️\n\n– Trattoria Luna 🍝",
+                "entregado": f"🚚 Pedido entregado, {nombre}. ¡Gracias por elegirnos! 😄\n\n– Trattoria Luna 🍝"
             }.get(datos["estado"], None)
             if mensaje:
                 enviar_mensaje_whatsapp(resultado["telefono"], mensaje)
@@ -149,135 +106,42 @@ def eliminar_pedido(id_pedido):
         tipo = pedido.get("tipo")
         mensaje = "🛑 Tu reserva ha sido cancelada." if tipo == "reserva" else "🛑 Tu pedido ha sido cancelado."
         if telefono:
-            enviar_mensaje_whatsapp(telefono, mensaje)
+            enviar_mensaje_whatsapp(telefono, mensaje + "\n\n– Trattoria Luna 🍝")
         pedidos_collection.delete_one({"id": id_pedido})
         return jsonify({"mensaje": "Pedido eliminado"}), 200
     return jsonify({"error": "Pedido no encontrado"}), 404
 
-# WhatsApp Bot
-estado_usuario = {}
+# Recordatorios automáticos de hora de recogida del pedido
+def enviar_recordatorios_pedidos():
+    ahora = datetime.now()
+    en_20_min = ahora + timedelta(minutes=20)
+    pedidos = pedidos_collection.find({
+        "tipo": "pedido_para_llevar",
+        "estado": "pendiente",
+        "fecha": en_20_min.date()
+    })
 
-PLATOS = {
-    "1": "Spaghetti alla Carbonara",
-    "2": "Pasta al Pomodoro",
-    "3": "Fettuccine Alfredo",
-    "4": "Penne al Pesto con Pollo",
-    "5": "Pizza Margherita",
-    "6": "Pizza Prosciutto e Funghi",
-    "7": "Lasagna Tradicional",
-    "8": "Risotto ai Frutti di Mare",
-    "9": "Ensalada Caprese",
-    "10": "Saltimbocca alla Romana"
-}
-LISTADO_PRODUCTOS = "\n".join([f"{n}. {nombre}" for n, nombre in PLATOS.items()])
-
-@app.route('/bot', methods=['POST'])
-def bot():
-    from_numero = request.form.get("From", "").replace("whatsapp:", "")
-    mensaje = request.form.get("Body", "").strip().lower()
-    respuesta = MessagingResponse()
-    msg = respuesta.message()
-
-    if from_numero not in estado_usuario:
-        estado_usuario[from_numero] = {"fase": "esperando_tipo"}
-
-    usuario = estado_usuario[from_numero]
-
-    if "menu" in mensaje or "menú" in mensaje:
-        msg.body("🇮🇹 Menú del Día – escribe *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
-        return str(respuesta)
-
-    if usuario["fase"] == "esperando_tipo":
-        if "reserva" in mensaje:
-            usuario["tipo"] = "reserva"
-        elif "llevar" in mensaje or "pedido" in mensaje:
-            usuario["tipo"] = "pedido_para_llevar"
-        else:
-            msg.body("¿Deseas hacer una *reserva* o un *pedido para llevar*?")
-            return str(respuesta)
-        usuario["fase"] = "esperando_nombre"
-        msg.body("✏️ Por favor, escribe *solo tu nombre completo*, sin frases adicionales.")
-
-    elif usuario["fase"] == "esperando_nombre":
-        usuario["nombre"] = mensaje.title()
-        if usuario["tipo"] == "reserva":
-            usuario["fase"] = "esperando_personas"
-            msg.body("👥 ¿Para cuántas personas es la reserva?")
-        else:
-            usuario["fase"] = "esperando_hora"
-            msg.body("🕒 ¿A qué hora deseas recoger tu pedido? (Ej: 14:00)")
-
-    elif usuario["fase"] == "esperando_personas":
+    for pedido in pedidos:
         try:
-            usuario["personas"] = int(mensaje)
-            usuario["fase"] = "esperando_fecha"
-            msg.body("📅 ¿Para qué fecha deseas reservar? (Ej: 2025-05-14)")
-        except ValueError:
-            msg.body("❌ Por favor, escribe solo el número de personas. (Ej: 3)")
+            hora_pedido = datetime.strptime(pedido["hora"], "%H:%M").time()
+            fecha_hora = datetime.combine(pedido["fecha"], hora_pedido)
+            minutos_restantes = (fecha_hora - ahora).total_seconds() / 60
+            if 19 <= minutos_restantes <= 21:
+                nombre = pedido.get("nombre", "cliente")
+                productos = pedido.get("productos", [])
+                productos_texto = "\n- " + "\n- ".join(productos) if productos else ""
+                enviar_mensaje_whatsapp(
+                    pedido.get("telefono"),
+                    f"🔔 Hola {nombre}, tu pedido estará listo para recoger a las {pedido['hora']}.\n"
+                    f"🍽️ Productos:\n{productos_texto}\n\n– Trattoria Luna 🍝"
+                )
+        except Exception as e:
+            print("Error en recordatorio:", e)
 
-    elif usuario["fase"] == "esperando_fecha":
-        usuario["fecha"] = mensaje
-        usuario["fase"] = "esperando_hora"
-        msg.body("🕒 ¿A qué hora deseas reservar mesa? (Ej: 14:00)")
-
-    elif usuario["fase"] == "esperando_hora":
-        usuario["hora"] = mensaje
-        if usuario["tipo"] == "reserva":
-            payload = {
-                "id": generar_id_numerico(),
-                "telefono": from_numero,
-                "tipo": usuario["tipo"],
-                "nombre": usuario["nombre"],
-                "fecha": usuario["fecha"],
-                "personas": usuario["personas"],
-                "hora": usuario["hora"],
-                "productos": [],
-                "timestamp": datetime.now().isoformat()
-            }
-            pedidos_collection.insert_one(payload)
-            msg.body(
-                f"✅ ¡Reserva confirmada!\n\n"
-                f"📌 Nombre: {usuario['nombre']}\n"
-                f"📅 Fecha: {usuario['fecha']}\n"
-                f"👥 Personas: {usuario['personas']}\n"
-                f"🕒 Hora: {usuario['hora']}"
-            )
-            del estado_usuario[from_numero]
-        else:
-            usuario["fase"] = "esperando_productos"
-            msg.body(
-                "📝 Escribe los *números* de los productos que deseas, separados por comas.\n"
-                "Ej: 1, 2, 2, 5\n\n" + LISTADO_PRODUCTOS
-            )
-
-    elif usuario["fase"] == "esperando_productos":
-        numeros = [n.strip() for n in mensaje.split(",")]
-        cantidades = Counter(numeros)
-        productos = [f"{PLATOS.get(n)} (x{cant})" for n, cant in cantidades.items() if PLATOS.get(n)]
-        usuario["productos"] = productos
-        payload = {
-            "id": generar_id_numerico(),
-            "telefono": from_numero,
-            "tipo": usuario["tipo"],
-            "nombre": usuario["nombre"],
-            "hora": usuario["hora"],
-            "productos": usuario["productos"],
-            "timestamp": datetime.now().isoformat(),
-            "estado": "pendiente"
-        }
-        pedidos_collection.insert_one(payload)
-        msg.body(
-            f"✅ ¡Pedido para llevar confirmado!\n\n"
-            f"📌 Nombre: {usuario['nombre']}\n"
-            f"🕒 Hora de recogida: {usuario['hora']}\n"
-            f"🍽️ Productos:\n- " + "\n- ".join(usuario["productos"])
-        )
-        del estado_usuario[from_numero]
-
-    else:
-        msg.body("👋 ¡Hola! ¿Deseas hacer una *reserva* o un *pedido para llevar*?")
-
-    return str(respuesta)
+scheduler = BackgroundScheduler()
+scheduler.add_job(enviar_recordatorios_pedidos, 'interval', minutes=1)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
