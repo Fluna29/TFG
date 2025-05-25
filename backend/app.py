@@ -136,10 +136,15 @@ def bot():
                 "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
         return str(respuesta)
 
+    # Inicializar el estado del usuario si no existe
     if from_numero not in estado_usuario:
         estado_usuario[from_numero] = {"fase": "esperando_tipo"}
 
     usuario = estado_usuario[from_numero]
+
+    # Asegurarse de que 'fase' siempre existe
+    if "fase" not in usuario:
+        usuario["fase"] = "esperando_tipo"
 
     if "menu" in mensaje or "menú" in mensaje:
         msg.body("🇮🇹 Menú del Día – escriba *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
@@ -167,7 +172,6 @@ def bot():
         if not futuros:
             msg.body("No tienes reservas ni pedidos futuros para cancelar.")
             return str(respuesta)
-        # Guardar la lista en el estado
         usuario["fase"] = "cancelando"
         usuario["cancelar_lista"] = [p["id"] for p in futuros]
         texto = "Estas son tus reservas/pedidos futuros:\n"
@@ -184,22 +188,22 @@ def bot():
     if usuario.get("fase") == "cancelando":
         try:
             idx = int(mensaje) - 1
-            id_cancelar = usuario["cancelar_lista"][idx]
-            pedido = pedidos_collection.find_one({"id": id_cancelar})
-            if pedido:
-                pedidos_collection.delete_one({"id": id_cancelar})
-                msg.body("✅ Reserva/Pedido cancelado correctamente.")
+            if "cancelar_lista" in usuario and 0 <= idx < len(usuario["cancelar_lista"]):
+                id_cancelar = usuario["cancelar_lista"][idx]
+                pedido = pedidos_collection.find_one({"id": id_cancelar})
+                if pedido:
+                    pedidos_collection.delete_one({"id": id_cancelar})
+                    msg.body("✅ Reserva/Pedido cancelado correctamente.")
+                else:
+                    msg.body("No se encontró la reserva/pedido seleccionado.")
             else:
-                msg.body("No se encontró la reserva/pedido seleccionado.")
+                msg.body("❌ No hay reservas/pedidos para cancelar.")
+                return str(respuesta)
         except Exception:
             msg.body("❌ Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
         usuario.pop("fase", None)
         usuario.pop("cancelar_lista", None)
         return str(respuesta)
-
-    # Inicializar el estado del usuario si no existe
-    if "fase" not in usuario:
-        usuario["fase"] = "esperando_tipo"
 
     # Esperando el tipo de reserva o pedido para llevar
     if usuario["fase"] == "esperando_tipo":
@@ -233,7 +237,6 @@ def bot():
         except ValueError:
             msg.body("❌ Por favor, escribe solo el número de personas. (Ej: 3)")
 
-
     elif usuario["fase"] == "esperando_fecha":
         if not es_fecha_valida(mensaje):
             msg.body("❌ La fecha debe tener el formato DD-MM-AAAA. Ejemplo: 01-01-2025")
@@ -260,7 +263,6 @@ def bot():
             return str(respuesta)
         usuario["hora"] = mensaje
 
-        #Si es una reserva, la guardamos ya en la base de datos ya que no requiere productos
         if usuario["tipo"] == "reserva":
             payload = {
                 "id": generar_id_numerico(),
