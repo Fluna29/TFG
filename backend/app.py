@@ -129,14 +129,24 @@ def bot():
     respuesta = MessagingResponse()
     msg = respuesta.message()
 
-    if "hola" in mensaje or "buenos días" in mensaje or "buenas tardes" in mensaje or "buenas noches" in mensaje:
+    palabras_clave = [
+        "hola", "buenos días", "buenas tardes", "buenas noches",
+        "reserva", "llevar", "pedido", "cancelar", "menu", "menú"
+    ]
+
+    # Si el usuario no está en el flujo y el mensaje no es relevante, no responder
+    if from_numero not in estado_usuario and not any(p in mensaje for p in palabras_clave):
+        return ("", 204)  # No Content
+
+    # Saludo/inicio de flujo
+    if any(saludo in mensaje for saludo in ["hola", "buenos días", "buenas tardes", "buenas noches"]):
         msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna." +
-                "\nEstamos encantados de atenderle." +
-                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
-                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
+                 "\nEstamos encantados de atenderle." +
+                 "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
+                 "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
         return str(respuesta)
 
-    # Inicializar el estado del usuario si no existe
+    # Inicializar el estado del usuario si no existe y el mensaje es relevante
     if from_numero not in estado_usuario:
         estado_usuario[from_numero] = {"fase": "esperando_tipo"}
 
@@ -316,10 +326,8 @@ def bot():
         del estado_usuario[from_numero]
 
     else:
-        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna."+
-                "\nEstamos encantados de atenderle." +
-                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
-                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
+        # Si el mensaje no encaja en ningún flujo, no responder
+        return ("", 204)
 
     return str(respuesta)
 
