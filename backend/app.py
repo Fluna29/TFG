@@ -129,88 +129,28 @@ def bot():
     respuesta = MessagingResponse()
     msg = respuesta.message()
 
-    palabras_clave = [
-        "hola", "buenos días", "buenas tardes", "buenas noches",
-        "reserva", "llevar", "pedido", "cancelar", "menu", "menú"
-    ]
-
-    # Responde solo si el mensaje es relevante o el usuario está en flujo
-    if from_numero not in estado_usuario and not any(p in mensaje for p in palabras_clave):
-        return ("", 204)
-
-    # Saludo/inicio de flujo
-    if any(saludo in mensaje for saludo in palabras_clave[:4]):
-        msg.body(
-            "👋 ¡Hola! Ha contactado con la Trattoria Luna.\n"
-            "Estamos encantados de atenderle.\n"
-            "Nuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00\n\n"
-            "¿Desea hacer una *reserva* o un *pedido para llevar*?"
-        )
+    if "hola" in mensaje or "buenos días" in mensaje or "buenas tardes" in mensaje or "buenas noches" in mensaje:
+        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna." +
+                "\nEstamos encantados de atenderle." +
+                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
+                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
         return str(respuesta)
 
-    # Inicializa estado solo si es relevante
-    usuario = estado_usuario.setdefault(from_numero, {"fase": "esperando_tipo"})
+    if from_numero not in estado_usuario:
+        estado_usuario[from_numero] = {"fase": "esperando_tipo"}
 
-    # Menú
+    usuario = estado_usuario[from_numero]
+
     if "menu" in mensaje or "menú" in mensaje:
         msg.body("🇮🇹 Menú del Día – escriba *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
         return str(respuesta)
 
-    # Cancelación
-    if "cancelar" in mensaje:
-        hoy = datetime.now().date()
-        pedidos = list(pedidos_collection.find({
-            "telefono": from_numero,
-            "$or": [
-                {"fecha": {"$exists": True, "$ne": ""}},
-                {"hora": {"$exists": True, "$ne": ""}}
-            ]
-        }))
-        futuros = []
-        for p in pedidos:
-            try:
-                fecha = datetime.strptime(p.get("fecha", ""), "%d-%m-%Y").date()
-                if fecha >= hoy:
-                    futuros.append(p)
-            except Exception:
-                continue
-        if not futuros:
-            msg.body("No tienes reservas ni pedidos futuros para cancelar.")
-            return str(respuesta)
-        usuario["fase"] = "cancelando"
-        usuario["cancelar_lista"] = [p["id"] for p in futuros]
-        texto = "Estas son tus reservas/pedidos futuros:\n"
-        for i, p in enumerate(futuros, 1):
-            tipo = "Reserva" if p["tipo"] == "reserva" else "Pedido para llevar"
-            productos = f"- {p.get('productos')}" if p.get("productos") else ""
-            texto += f"{i}. {tipo} - {p.get('fecha', '')} {p.get('hora', '')} {productos}\n"
-        texto += "\nResponde con el número de la reserva/pedido que deseas cancelar."
-        msg.body(texto)
-        return str(respuesta)
+    # Inicializar el estado del usuario si no existe
+    if "fase" not in usuario:
+        usuario["fase"] = "esperando_tipo"
 
-    # Cancelando
-    if usuario.get("fase") == "cancelando":
-        try:
-            idx = int(mensaje) - 1
-            if "cancelar_lista" in usuario and 0 <= idx < len(usuario["cancelar_lista"]):
-                id_cancelar = usuario["cancelar_lista"][idx]
-                pedido = pedidos_collection.find_one({"id": id_cancelar})
-                if pedido:
-                    pedidos_collection.delete_one({"id": id_cancelar})
-                    msg.body("✅ Reserva/Pedido cancelado correctamente.")
-                else:
-                    msg.body("No se encontró la reserva/pedido seleccionado.")
-            else:
-                msg.body("❌ No hay reservas/pedidos para cancelar.")
-                return str(respuesta)
-        except Exception:
-            msg.body("❌ Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
-        usuario.clear()
-        return str(respuesta)
-
-    # Fases del flujo principal
-    fase = usuario.get("fase", "esperando_tipo")
-    if fase == "esperando_tipo":
+    # Esperando el tipo de reserva o pedido para llevar
+    if usuario["fase"] == "esperando_tipo":
         if "reserva" in mensaje:
             usuario["tipo"] = "reserva"
         elif "llevar" in mensaje or "pedido" in mensaje:
@@ -221,7 +161,7 @@ def bot():
         usuario["fase"] = "esperando_nombre"
         msg.body("✏️ Por favor, escriba *solamente su nombre completo*, (Ej: Juan Pérez).")
 
-    elif fase == "esperando_nombre":
+    elif usuario["fase"] == "esperando_nombre":
         if not es_nombre_valido(mensaje):
             msg.body("❌ El nombre no debe contener números ni caracteres especiales. Ejemplo: Juan Pérez")
             return str(respuesta)
@@ -233,7 +173,7 @@ def bot():
             usuario["fase"] = "esperando_hora"
             msg.body("🕒 ¿A qué hora deseas recoger tu pedido? (Ej: 14:00) \n\nNuestro horario es de 13:00 a 16:00 y de 20:00 a 23:00")
 
-    elif fase == "esperando_personas":
+    elif usuario["fase"] == "esperando_personas":
         try:
             usuario["personas"] = int(mensaje)
             usuario["fase"] = "esperando_fecha"
@@ -241,7 +181,8 @@ def bot():
         except ValueError:
             msg.body("❌ Por favor, escribe solo el número de personas. (Ej: 3)")
 
-    elif fase == "esperando_fecha":
+
+    elif usuario["fase"] == "esperando_fecha":
         if not es_fecha_valida(mensaje):
             msg.body("❌ La fecha debe tener el formato DD-MM-AAAA. Ejemplo: 01-01-2025")
             return str(respuesta)
@@ -253,7 +194,7 @@ def bot():
         usuario["fase"] = "esperando_hora"
         msg.body("🕒 ¿A qué hora deseas reservar mesa? (Ej: 14:00)")
 
-    elif fase == "esperando_hora":
+    elif usuario["fase"] == "esperando_hora":
         if not es_hora_valida(mensaje):
             msg.body("❌ La hora debe tener el formato HH:MM. Ejemplo: 14:00")
             return str(respuesta)
@@ -267,6 +208,7 @@ def bot():
             return str(respuesta)
         usuario["hora"] = mensaje
 
+        #Si es una reserva, la guardamos ya en la base de datos ya que no requiere productos
         if usuario["tipo"] == "reserva":
             payload = {
                 "id": generar_id_numerico(),
@@ -287,7 +229,7 @@ def bot():
                 f"👥 Personas: {usuario['personas']}\n"
                 f"🕒 Hora: {usuario['hora']}"
             )
-            estado_usuario.pop(from_numero, None)
+            del estado_usuario[from_numero]
         else:
             usuario["fase"] = "esperando_productos"
             msg.body(
@@ -295,7 +237,7 @@ def bot():
                 "*Ej: 1, 2, 2, 5*\n\n" + LISTADO_PRODUCTOS
             )
 
-    elif fase == "esperando_productos":
+    elif usuario["fase"] == "esperando_productos":
         numeros = [n.strip() for n in mensaje.split(",")]
         cantidades = Counter(numeros)
         productos = [f"{PLATOS.get(n)} (x{cant})" for n, cant in cantidades.items() if PLATOS.get(n)]
@@ -317,10 +259,13 @@ def bot():
             f"🕒 Hora de recogida: {usuario['hora']}\n"
             f"🍽️ Productos:\n- " + "\n- ".join(usuario["productos"])
         )
-        estado_usuario.pop(from_numero, None)
+        del estado_usuario[from_numero]
 
     else:
-        return ("", 204)
+        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna."+
+                "\nEstamos encantados de atenderle." +
+                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
+                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
 
     return str(respuesta)
 
