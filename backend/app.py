@@ -168,7 +168,10 @@ def bot():
         texto = "Estas son tus reservas/pedidos futuros:\n"
         for i, p in enumerate(futuros, 1):
             tipo = "Reserva" if p["tipo"] == "reserva" else "Pedido para llevar"
-            texto += f"{i}. {tipo} - {p.get('fecha', '')} {p.get('hora', '')} - {p.get('productos', [])}\n"
+            productos = ""
+            if p.get("productos"):
+                productos = f"- {p.get('productos')}"
+            texto += f"{i}. {tipo} - {p.get('fecha', '')} {p.get('hora', '')} {productos}\n"
         texto += "\nResponde con el número de la reserva/pedido que deseas cancelar."
         msg.body(texto)
         return str(respuesta)
@@ -223,9 +226,14 @@ def bot():
         except ValueError:
             msg.body("❌ Por favor, escribe solo el número de personas. (Ej: 3)")
 
+
     elif usuario["fase"] == "esperando_fecha":
         if not es_fecha_valida(mensaje):
             msg.body("❌ La fecha debe tener el formato DD-MM-AAAA. Ejemplo: 01-01-2025")
+            return str(respuesta)
+        fecha_ingresada = datetime.strptime(mensaje, "%d-%m-%Y").date()
+        if fecha_ingresada < datetime.now().date():
+            msg.body("❌ La fecha no puede ser anterior a hoy. Por favor, ingresa una fecha válida.")
             return str(respuesta)
         usuario["fecha"] = mensaje
         usuario["fase"] = "esperando_hora"
