@@ -4,6 +4,7 @@ from bson.json_util import dumps
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from datetime import datetime
+from datetime import time
 import os
 import re
 from collections import Counter
@@ -25,6 +26,10 @@ def es_hora_valida(hora):
 
 def es_fecha_valida(fecha):
     return bool(re.match(r"^\d{2}-\d{2}-\d{4}$", fecha))
+
+def hora_en_rango(hora):
+    h = datetime.strptime(hora, "%H:%M").time()
+    return (time(13,0) <= h < time(16,0)) or (time(20,0) <= h < time(23,0))
 
 # Generar ID numérico incremental persistente
 def generar_id_numerico():
@@ -187,7 +192,7 @@ def bot():
             else:
                 msg.body("No se encontró la reserva/pedido seleccionado.")
         except Exception:
-            msg.body("Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
+            msg.body("❌ Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
         usuario.pop("fase", None)
         usuario.pop("cancelar_lista", None)
         return str(respuesta)
@@ -243,7 +248,17 @@ def bot():
         if not es_hora_valida(mensaje):
             msg.body("❌ La hora debe tener el formato HH:MM. Ejemplo: 14:00")
             return str(respuesta)
+        if usuario.get("fecha") == datetime.now().strftime("%d-%m-%Y"):
+            hora_ingresada = datetime.strptime(mensaje, "%H:%M").time()
+            if hora_ingresada <= datetime.now().time():
+                msg.body("❌ La hora debe ser posterior a la actual.")
+                return str(respuesta)
+        if not hora_en_rango(mensaje):
+            msg.body("❌ Solo aceptamos reservas/pedidos entre 13:00-16:00 y 20:00-23:00.")
+            return str(respuesta)
         usuario["hora"] = mensaje
+
+        #Si es una reserva, la guardamos ya en la base de datos ya que no requiere productos
         if usuario["tipo"] == "reserva":
             payload = {
                 "id": generar_id_numerico(),
