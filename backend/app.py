@@ -124,6 +124,13 @@ def bot():
     respuesta = MessagingResponse()
     msg = respuesta.message()
 
+    if "hola" in mensaje or "buenos días" in mensaje or "buenas tardes" in mensaje or "buenas noches" in mensaje:
+        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna." +
+                "\nEstamos encantados de atenderle." +
+                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
+                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
+        return str(respuesta)
+
     if from_numero not in estado_usuario:
         estado_usuario[from_numero] = {"fase": "esperando_tipo"}
 
@@ -133,6 +140,58 @@ def bot():
         msg.body("🇮🇹 Menú del Día – escriba *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
         return str(respuesta)
 
+    # Cancelar reservas o pedidos
+    if "cancelar" in mensaje:
+        hoy = datetime.now().date()
+        pedidos = list(pedidos_collection.find({
+            "telefono": from_numero,
+            "$or": [
+                {"fecha": {"$exists": True, "$ne": ""}},
+                {"hora": {"$exists": True, "$ne": ""}}
+            ]
+        }))
+
+        futuros = []
+        for p in pedidos:
+            try:
+                fecha = datetime.strptime(p.get("fecha", ""), "%d-%m-%Y").date()
+                if fecha >= hoy:
+                    futuros.append(p)
+            except Exception:
+                continue
+        if not futuros:
+            msg.body("No tienes reservas ni pedidos futuros para cancelar.")
+            return str(respuesta)
+        # Guardar la lista en el estado
+        usuario["fase"] = "cancelando"
+        usuario["cancelar_lista"] = [p["id"] for p in futuros]
+        texto = "Estas son tus reservas/pedidos futuros:\n"
+        for i, p in enumerate(futuros, 1):
+            tipo = "Reserva" if p["tipo"] == "reserva" else "Pedido para llevar"
+            texto += f"{i}. {tipo} - {p.get('fecha', '')} {p.get('hora', '')} - {p.get('productos', [])}\n"
+        texto += "\nResponde con el número de la reserva/pedido que deseas cancelar."
+        msg.body(texto)
+        return str(respuesta)
+
+    if usuario.get("fase") == "cancelando":
+        try:
+            idx = int(mensaje) - 1
+            id_cancelar = usuario["cancelar_lista"][idx]
+            pedido = pedidos_collection.find_one({"id": id_cancelar})
+            if pedido:
+                pedidos_collection.delete_one({"id": id_cancelar})
+                msg.body("✅ Reserva/Pedido cancelado correctamente.")
+            else:
+                msg.body("No se encontró la reserva/pedido seleccionado.")
+        except Exception:
+            msg.body("Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
+        usuario.pop("fase", None)
+        usuario.pop("cancelar_lista", None)
+        return str(respuesta)
+
+
+
+    # Esperando el tipo de reserva o pedido para llevar
     if usuario["fase"] == "esperando_tipo":
         if "reserva" in mensaje:
             usuario["tipo"] = "reserva"
