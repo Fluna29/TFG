@@ -197,7 +197,9 @@ def bot():
         usuario.pop("cancelar_lista", None)
         return str(respuesta)
 
-
+    # Inicializar el estado del usuario si no existe
+    if "fase" not in usuario:
+        usuario["fase"] = "esperando_tipo"
 
     # Esperando el tipo de reserva o pedido para llevar
     if usuario["fase"] == "esperando_tipo":
