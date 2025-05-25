@@ -134,33 +134,29 @@ def bot():
         "reserva", "llevar", "pedido", "cancelar", "menu", "menú"
     ]
 
-    # Si el usuario no está en el flujo y el mensaje no es relevante, no responder
+    # Responde solo si el mensaje es relevante o el usuario está en flujo
     if from_numero not in estado_usuario and not any(p in mensaje for p in palabras_clave):
-        return ("", 204)  # No Content
+        return ("", 204)
 
     # Saludo/inicio de flujo
-    if any(saludo in mensaje for saludo in ["hola", "buenos días", "buenas tardes", "buenas noches"]):
-        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna." +
-                 "\nEstamos encantados de atenderle." +
-                 "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
-                 "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
+    if any(saludo in mensaje for saludo in palabras_clave[:4]):
+        msg.body(
+            "👋 ¡Hola! Ha contactado con la Trattoria Luna.\n"
+            "Estamos encantados de atenderle.\n"
+            "Nuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00\n\n"
+            "¿Desea hacer una *reserva* o un *pedido para llevar*?"
+        )
         return str(respuesta)
 
-    # Inicializar el estado del usuario si no existe y el mensaje es relevante
-    if from_numero not in estado_usuario:
-        estado_usuario[from_numero] = {"fase": "esperando_tipo"}
+    # Inicializa estado solo si es relevante
+    usuario = estado_usuario.setdefault(from_numero, {"fase": "esperando_tipo"})
 
-    usuario = estado_usuario[from_numero]
-
-    # Asegurarse de que 'fase' siempre existe
-    if "fase" not in usuario:
-        usuario["fase"] = "esperando_tipo"
-
+    # Menú
     if "menu" in mensaje or "menú" in mensaje:
         msg.body("🇮🇹 Menú del Día – escriba *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
         return str(respuesta)
 
-    # Cancelar reservas o pedidos
+    # Cancelación
     if "cancelar" in mensaje:
         hoy = datetime.now().date()
         pedidos = list(pedidos_collection.find({
@@ -170,7 +166,6 @@ def bot():
                 {"hora": {"$exists": True, "$ne": ""}}
             ]
         }))
-
         futuros = []
         for p in pedidos:
             try:
@@ -187,14 +182,13 @@ def bot():
         texto = "Estas son tus reservas/pedidos futuros:\n"
         for i, p in enumerate(futuros, 1):
             tipo = "Reserva" if p["tipo"] == "reserva" else "Pedido para llevar"
-            productos = ""
-            if p.get("productos"):
-                productos = f"- {p.get('productos')}"
+            productos = f"- {p.get('productos')}" if p.get("productos") else ""
             texto += f"{i}. {tipo} - {p.get('fecha', '')} {p.get('hora', '')} {productos}\n"
         texto += "\nResponde con el número de la reserva/pedido que deseas cancelar."
         msg.body(texto)
         return str(respuesta)
 
+    # Cancelando
     if usuario.get("fase") == "cancelando":
         try:
             idx = int(mensaje) - 1
@@ -211,12 +205,12 @@ def bot():
                 return str(respuesta)
         except Exception:
             msg.body("❌ Por favor, responde con el número correcto de la reserva/pedido que deseas cancelar.")
-        usuario.pop("fase", None)
-        usuario.pop("cancelar_lista", None)
+        usuario.clear()
         return str(respuesta)
 
-    # Esperando el tipo de reserva o pedido para llevar
-    if usuario["fase"] == "esperando_tipo":
+    # Fases del flujo principal
+    fase = usuario.get("fase", "esperando_tipo")
+    if fase == "esperando_tipo":
         if "reserva" in mensaje:
             usuario["tipo"] = "reserva"
         elif "llevar" in mensaje or "pedido" in mensaje:
@@ -227,7 +221,7 @@ def bot():
         usuario["fase"] = "esperando_nombre"
         msg.body("✏️ Por favor, escriba *solamente su nombre completo*, (Ej: Juan Pérez).")
 
-    elif usuario["fase"] == "esperando_nombre":
+    elif fase == "esperando_nombre":
         if not es_nombre_valido(mensaje):
             msg.body("❌ El nombre no debe contener números ni caracteres especiales. Ejemplo: Juan Pérez")
             return str(respuesta)
@@ -239,7 +233,7 @@ def bot():
             usuario["fase"] = "esperando_hora"
             msg.body("🕒 ¿A qué hora deseas recoger tu pedido? (Ej: 14:00) \n\nNuestro horario es de 13:00 a 16:00 y de 20:00 a 23:00")
 
-    elif usuario["fase"] == "esperando_personas":
+    elif fase == "esperando_personas":
         try:
             usuario["personas"] = int(mensaje)
             usuario["fase"] = "esperando_fecha"
@@ -247,7 +241,7 @@ def bot():
         except ValueError:
             msg.body("❌ Por favor, escribe solo el número de personas. (Ej: 3)")
 
-    elif usuario["fase"] == "esperando_fecha":
+    elif fase == "esperando_fecha":
         if not es_fecha_valida(mensaje):
             msg.body("❌ La fecha debe tener el formato DD-MM-AAAA. Ejemplo: 01-01-2025")
             return str(respuesta)
@@ -259,7 +253,7 @@ def bot():
         usuario["fase"] = "esperando_hora"
         msg.body("🕒 ¿A qué hora deseas reservar mesa? (Ej: 14:00)")
 
-    elif usuario["fase"] == "esperando_hora":
+    elif fase == "esperando_hora":
         if not es_hora_valida(mensaje):
             msg.body("❌ La hora debe tener el formato HH:MM. Ejemplo: 14:00")
             return str(respuesta)
@@ -293,7 +287,7 @@ def bot():
                 f"👥 Personas: {usuario['personas']}\n"
                 f"🕒 Hora: {usuario['hora']}"
             )
-            del estado_usuario[from_numero]
+            estado_usuario.pop(from_numero, None)
         else:
             usuario["fase"] = "esperando_productos"
             msg.body(
@@ -301,7 +295,7 @@ def bot():
                 "*Ej: 1, 2, 2, 5*\n\n" + LISTADO_PRODUCTOS
             )
 
-    elif usuario["fase"] == "esperando_productos":
+    elif fase == "esperando_productos":
         numeros = [n.strip() for n in mensaje.split(",")]
         cantidades = Counter(numeros)
         productos = [f"{PLATOS.get(n)} (x{cant})" for n, cant in cantidades.items() if PLATOS.get(n)]
@@ -323,10 +317,9 @@ def bot():
             f"🕒 Hora de recogida: {usuario['hora']}\n"
             f"🍽️ Productos:\n- " + "\n- ".join(usuario["productos"])
         )
-        del estado_usuario[from_numero]
+        estado_usuario.pop(from_numero, None)
 
     else:
-        # Si el mensaje no encaja en ningún flujo, no responder
         return ("", 204)
 
     return str(respuesta)
