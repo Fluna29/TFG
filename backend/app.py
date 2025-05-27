@@ -86,7 +86,6 @@ def crear_pedido():
 def actualizar_pedido(id_pedido):
     datos = request.get_json()
     datos["timestamp"] = datetime.now().isoformat()
-    # Elimina solo el campo _id si existe
     if "_id" in datos:
         del datos["_id"]
     resultado = pedidos_collection.find_one_and_update(
@@ -106,7 +105,11 @@ def actualizar_pedido(id_pedido):
             }.get(datos["estado"], None)
             if mensaje:
                 enviar_mensaje_whatsapp(resultado["telefono"], mensaje)
-        return jsonify({"mensaje": "Pedido actualizado", "pedido": resultado})
+        return app.response_class(
+            response=dumps({"mensaje": "Pedido actualizado", "pedido": resultado}),
+            status=200,
+            mimetype="application/json"
+        )
     return jsonify({"error": "Pedido no encontrado"}), 404
 
 
