@@ -18,15 +18,20 @@ pedidos_collection = db[os.environ.get("MONGO_PEDIDOS_COLLECTION")]
 contador_collection = db[os.environ.get("MONGO_CONTADOR_COLLECTION")]
 
 # --- Funciones de validación ---
+
+# Valida que el nombre introducido contenga solo letras y espacios
 def es_nombre_valido(nombre):
     return bool(re.match(r"^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$", nombre))
 
+# Valida que la hora introducida esté en el formato HH:MM
 def es_hora_valida(hora):
     return bool(re.match(r"^\d{2}:\d{2}$", hora))
 
+# Valida que la fecha introducida esté en el formato DD-MM-AAAA
 def es_fecha_valida(fecha):
     return bool(re.match(r"^\d{2}-\d{2}-\d{4}$", fecha))
 
+#Valida que la hora introducia esté dentro del rango de apertura del restaurante
 def hora_en_rango(hora):
     h = datetime.strptime(hora, "%H:%M").time()
     return (time(13,0) <= h < time(16,0)) or (time(20,0) <= h < time(23,0))
@@ -129,17 +134,17 @@ def bot():
     respuesta = MessagingResponse()
     msg = respuesta.message()
 
+    if from_numero not in estado_usuario:
+        estado_usuario[from_numero] = {"fase": "esperando_tipo"}
+
+    usuario = estado_usuario[from_numero]
+
     if "hola" in mensaje or "buenos días" in mensaje or "buenas tardes" in mensaje or "buenas noches" in mensaje:
         msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna." +
                 "\nEstamos encantados de atenderle." +
                 "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
                 "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
         return str(respuesta)
-
-    if from_numero not in estado_usuario:
-        estado_usuario[from_numero] = {"fase": "esperando_tipo"}
-
-    usuario = estado_usuario[from_numero]
 
     if "menu" in mensaje or "menú" in mensaje:
         msg.body("🇮🇹 Menú del Día – escriba *pedido* o *reserva* para comenzar:\n\n" + LISTADO_PRODUCTOS)
@@ -262,12 +267,9 @@ def bot():
         del estado_usuario[from_numero]
 
     else:
-        msg.body("👋 ¡Hola! Ha contactado con la Trattoria Luna."+
-                "\nEstamos encantados de atenderle." +
-                "\nNuestro horario de apertura es: 13:00 a 16:00 y de 20:00 a 23:00" +
-                "\n\n¿Desea hacer una *reserva* o un *pedido para llevar*?")
-
+        msg.body("❓ No entendí tu mensaje. Por favor, escribe 'hola' para comenzar de nuevo.")
+        del estado_usuario[from_numero]
     return str(respuesta)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
