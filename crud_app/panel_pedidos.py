@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QInputDialog, QMessageBox, QDialog, QComboBox
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from collections import Counter
@@ -148,6 +148,7 @@ class PanelPedidosCRUD(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Panel de Pedidos")
+        self.setWindowIcon(QIcon("../resources/icon.ico"))
         self.setMinimumSize(900, 600)
 
         # Introducimos aquí la URL de la API donde están almacenados nuestros pedidos.
