@@ -17,7 +17,6 @@ db = client[os.environ.get("MONGO_DB")]
 pedidos_collection = db[os.environ.get("MONGO_PEDIDOS_COLLECTION")]
 contador_collection = db[os.environ.get("MONGO_CONTADOR_COLLECTION")]
 
-
 # --- Funciones de validación ---
 
 # Valida que el nombre introducido contenga solo letras y espacios
