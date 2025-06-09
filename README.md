@@ -9,7 +9,7 @@
 ```
 TFG/
 ├── backend/            # API Flask desplegada en Render (gestiona los pedidos y WhatsApp)
-├── crud_app/           # Aplicación PySide6 (panel CRUD de escritorio)
+├── crud_app/           # Aplicación PySide6 (aplicación de escritorio para restaurante)
 │   ├── panel_pedidos.py
 │   ├── Notificacion.wav
 │   └── ...
@@ -36,16 +36,20 @@ TFG/
 ---
 
 ## 📸 Capturas de pantalla
-
+###
 ### 💬 Chatbot de WhatsApp automático
-### ✅ Confirmación de pedido + mensajes automáticos
-### 🧭 Flujo de pedido paso a paso
+#### ✅ Confirmación de pedido + mensajes automáticos
+#### 🧭 Flujo de pedido paso a paso
 ![Flujo Pedido 1](./resources/Flujo_Pedido1.png)
 ![Flujo Pedido 2](./resources/Flujo_Pedido2.png)
 
 ### 🖥️ Panel CRUD con pedidos y reservas
-### 🖼️ Vista de la aplicación de escritorio
+#### 🖼️ Vista de la ventana de pedidos
 ![App Pedidos](./resources/App_Pedidos.png)
+#### 🖼️ Vista de la ventana de edición de productos
+![Edición Productos](./resources/Editar_Productos.png)
+#### 📊 Vista de la ventana de estadísticas visuales
+![Estadísticas](./resources/Ventana_Estadisticas.png)
 
 ---
 
@@ -78,7 +82,7 @@ pip install PySide6 matplotlib numpy requests playsound
 
 ---
 
-## 📡 Backend (opcional)
+## 📡 Chatbot de WhatsApp (backend)
 
 Si deseas probar el backend localmente en lugar de Render:
 
@@ -93,7 +97,7 @@ python app.py
 
 ---
 
-## 🖥️ Frontend (panel CRUD de escritorio)
+## 🖥️ Aplicación de escritorio restaurante (frontend)
 
 1. Entra en la carpeta `crud_app/`.
 2. Ejecuta el panel con:
@@ -106,7 +110,6 @@ Esto abrirá la aplicación de escritorio con:
 
 - Visualización y edición de pedidos y reservas
 - Estadísticas visuales
-- Filtros por fecha y tipo
 - Sonido de notificación
 - Integración automática con backend en Render
 
