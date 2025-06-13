@@ -9,15 +9,18 @@
 ```
 TFG/
 ├── backend/            # API Flask desplegada en Render (gestiona los pedidos y WhatsApp)
+│   ├── app.py
+│   └── requirements.txt
 ├── crud_app/           # Aplicación PySide6 (aplicación de escritorio para restaurante)
 │   ├── panel_pedidos.py
-│   ├── Notificacion.wav
-│   └── ...
+│   └── Notificacion.wav
 ├── resources/          # Iconos e imágenes para documentación
 │   ├── icon.ico
 │   ├── App_Pedidos.png
 │   ├── Flujo_Pedido1.png
-│   └── Flujo_Pedido2.png
+│   ├── Flujo_Pedido2.png
+│   ├── Editar_Productos.png
+│   └── Ventana_Estadisticas.png
 └── README.md
 ```
 
