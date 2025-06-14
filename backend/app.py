@@ -11,7 +11,7 @@ from collections import Counter
 
 app = Flask(__name__)
 
-# Conexión a MongoDB Atlas
+# Declaración de variables de entorno
 client = MongoClient(os.environ.get("MONGO_CLIENT"))
 db = client[os.environ.get("MONGO_DB")]
 pedidos_collection = db[os.environ.get("MONGO_PEDIDOS_COLLECTION")]
@@ -34,13 +34,13 @@ def es_fecha_valida(fecha):
     return bool(re.match(r"^\d{2}-\d{2}-\d{4}$", fecha))
 
 
-#Valida que la hora introducia esté dentro del rango de apertura del restaurante
+#Valida que la hora introducida esté dentro del rango de apertura del restaurante
 def hora_en_rango(hora):
     h = datetime.strptime(hora, "%H:%M").time()
     return (time(13, 0) <= h < time(16, 0)) or (time(20, 0) <= h < time(23, 0))
 
 
-# Generar ID numérico incremental persistente
+# Generar ID numérico incremental persistente usando base de datos en MongoDB colección "contador"
 def generar_id_numerico():
     result = contador_collection.find_one_and_update(
         {"_id": "contador_pedidos"},
@@ -126,9 +126,10 @@ def eliminar_pedido(id_pedido):
     return jsonify({"error": "Pedido no encontrado"}), 404
 
 
-# WhatsApp Bot
+# Variables globales para el estado del usuario
 estado_usuario = {}
 
+# Lista de platos del menú
 PLATOS = {
     "1": "Spaghetti alla Carbonara",
     "2": "Pasta al Pomodoro",
